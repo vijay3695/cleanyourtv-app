@@ -1,6 +1,6 @@
 // FROZEN INTERFACE (PRODUCT-SPEC section 5.2, after gate R0). Names and signatures are binding;
-// a change needs a one-paragraph RFC in the repo and Fable sign-off. Copied verbatim by W1; every
-// edit to the copied text is listed in DECISIONS-W1.md. Owner: W3.
+// a change needs a one-paragraph RFC in this repository. Copied verbatim by W1; every edit to the
+// copied text is listed in DECISIONS-W1.md. Owner: this fork's maintainers.
 
 package tv.cleanyour.core.ops   // R0: 1 owns rendering only; the vocabulary above is in :core:model
 
