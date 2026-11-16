@@ -315,3 +315,39 @@ test covering apply, browsing, reboot persistence and restore. CI must pass befo
 This RFC is a proposal only. The model interface is marked frozen and requires Fable sign-off before
 adding the keys or implementing the feature. The earlier raw-command helper was exploratory and is
 removed by this proposal's cleanup; it must not be used by production code.
+
+
+### Reference review: upstream app PR #12048 (2026-11-16)
+
+Reviewed: https://github.com/udhaykumarbala/cleanyourtv-app/pull/12048 (author: thakoralpesh3;
+currently open). The useful architectural approach is sound: add the two GLOBAL setting keys to the
+existing typed `SettingKey` allowlist, represent the operation as a typed `PlanRequest`, let
+`:core:planner` produce ordinary `Op.SettingsPut` steps with captured `Prior` values, and expose it
+through the existing per-TV settings machine and Manage UI. This is the approach to adapt, not a
+separate shell-command mechanism.
+
+Do not copy these parts of that PR:
+
+- It also adds a workflow that builds and publishes a release APK on pushes to every branch. This is
+  unrelated to DNS and must not be brought into this feature.
+- It lowers the phone app minimum SDK from 28 to 26 and changes the APK check to match. That is a
+  separate compatibility decision; DNS itself requires Android 9 / API 28 on the TV. Do not change
+  the phone app's minSdk for this feature.
+- It schedules AdGuard DNS automatically at the end of every Setup plan. This is an unexpected,
+  system-wide network change and conflicts with the requested explicit, separate Settings control.
+  DNS must remain opt-in and must never be silently enabled by Setup.
+- Its UI offers only a fixed AdGuard toggle and Off. The requested feature needs an editable
+  hostname and must preserve/report an existing custom provider without mislabelling it.
+- In the reviewed machine code, after a successful write result, failed live read-back falls back to
+  the requested mode/specifier and still emits a success snackbar. Our implementation must not do
+  that: success is allowed only after a fresh read confirms both values. An unreadable or mismatched
+  result is an unverified outcome, not success.
+- The PR currently has no submitted reviews or review comments, and its head status is pending with
+  no check runs reported by GitHub at the time of review. It is not evidence of maintainer approval
+  or passing CI yet.
+
+Our implementation should retain the useful typed planner/rollback pattern, but make the setting
+change a separately confirmed, per-TV action; validate and normalize the editable hostname at the
+boundary; capture both old values; explicitly handle stale specifiers and unset values; read both
+settings back before reporting success; and test failure/rollback and API 28+ behaviour. Keep the
+model change behind the required frozen-interface RFC/sign-off. No code from PR #12048 is copied.
