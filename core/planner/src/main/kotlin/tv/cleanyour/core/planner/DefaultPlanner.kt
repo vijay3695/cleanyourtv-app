@@ -110,6 +110,7 @@ class DefaultPlanner(
             PlanRequest.Reboot -> { d.reboot(); PlanKind.REBOOT }
             is PlanRequest.UpdateLauncher -> { d.updateLauncher(request.launcher); PlanKind.UPDATE_LAUNCHER }
             PlanRequest.HomeHelperOff -> { d.helperOff(); PlanKind.HOME_HELPER_OFF }
+            is PlanRequest.SetPrivateDns -> { d.setPrivateDns(request); PlanKind.PRIVATE_DNS }
         }
         if (d.reasons.isNotEmpty()) return PlanResult.Refused(d.reasons.toList())
         val steps = d.steps.toList()
@@ -989,6 +990,37 @@ class DefaultPlanner(
             }
         }
 
+        // RFC-PRIVATE-DNS-1: explicit Manage-only change; the snapshot is a fresh TV read.
+        fun setPrivateDns(request: PlanRequest.SetPrivateDns) {
+            if (snapshot.facts.sdk < 28) { refuse("Private DNS requires Android 9 (API 28) or newer"); return }
+            val mode = request.mode
+            if (mode !in setOf("off", "opportunistic", "hostname")) { refuse("unsupported Private DNS mode"); return }
+            val host = request.hostname?.trim()?.trimEnd('.')?.lowercase()
+            if (mode == "hostname") {
+                val labels = host?.split('.') ?: emptyList()
+                if (host.isNullOrBlank() || host.length > 253 || labels.size < 2 || labels.any { it.isEmpty() || it.length > 63 ||
+                    !it.first().isLetterOrDigit() || !it.last().isLetterOrDigit() || it.any { c -> !c.isLetterOrDigit() && c != '-' } } ||
+                    host.matches(Regex("[0-9.]+")) || host.contains(':')) {
+                    refuse("enter a valid DNS hostname"); return
+                }
+            }
+            val oldMode = snapshot.settings[SettingKey.PRIVATE_DNS_MODE]
+            val oldHost = snapshot.settings[SettingKey.PRIVATE_DNS_SPECIFIER]
+            if (oldMode !in setOf("off", "opportunistic", "hostname")) { refuse("the TV's current Private DNS mode could not be read safely"); return }
+            if (oldMode == "hostname" && (oldHost.isNullOrBlank() || oldHost.length > 253)) { refuse("the TV's current Private DNS hostname could not be read safely"); return }
+            if (mode == "hostname") {
+                step(Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, host), Prior(settingValue = oldHost), GROUP_PRIVATE_DNS,
+                    "Setting the Private DNS hostname", FailurePolicy.STOP_AND_ROLLBACK)
+                step(Op.SettingsPut(SettingKey.PRIVATE_DNS_MODE, "hostname"), Prior(settingValue = oldMode), GROUP_PRIVATE_DNS,
+                    "Enabling Private DNS", FailurePolicy.STOP_AND_ROLLBACK)
+            } else {
+                step(Op.SettingsPut(SettingKey.PRIVATE_DNS_MODE, mode), Prior(settingValue = oldMode), GROUP_PRIVATE_DNS,
+                    "Changing Private DNS mode", FailurePolicy.STOP_AND_ROLLBACK)
+                step(Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, null), Prior(settingValue = oldHost), GROUP_PRIVATE_DNS,
+                    "Clearing the previous Private DNS hostname", FailurePolicy.STOP_AND_ROLLBACK)
+            }
+        }
+
         fun debugOff() {
             if (snapshot.facts.sdk >= 30) {
                 step(Op.SettingsPut(SettingKey.ADB_WIFI_ENABLED, "0"), Prior(settingValue = snapshot.settings[SettingKey.ADB_WIFI_ENABLED]),
@@ -1046,6 +1078,7 @@ class DefaultPlanner(
         // RFC-HELPER-1 (test build): the Home button helper's guarded section and group.
         const val SECTION_HELPER = "home_helper"
         const val GROUP_HELPER = "helper"
+        const val GROUP_PRIVATE_DNS = "private_dns"
         const val HELPER_BIND_SECONDS = 3
         const val HELPER_CHECK_SECONDS = 2
         const val NARRATION_HELPER_ON = "Switching on the Home button helper"
