@@ -266,7 +266,7 @@ android/com.android.internal.app.ResolverActivity" from the journal and names th
 person installed on the card (never in the log or the report). Two `CopyKey`s are added.
 
 
-## RFC-PRIVATE-DNS-1: a guarded Private DNS setting for each TV (proposed; not approved)
+## RFC-PRIVATE-DNS-1: a guarded Private DNS setting for each TV (approved for this fork)
 
 The Manage screen should offer a separate **Private DNS** entry for the selected TV. Android Private
 DNS is a TV-wide Android setting (Android 9 and later), not an app-only DNS switch. It affects apps
@@ -278,7 +278,7 @@ edit the hostname, review the target TV and proposed change, then explicitly app
 is a DNS-over-TLS hostname (not an IP address). Invalid input must be rejected before a TV command
 is planned. Do not silently fall back to another provider.
 
-Smallest safe implementation, subject to Fable sign-off:
+Smallest safe implementation for this fork:
 
 - Extend the frozen `:core:model` `SettingKey` vocabulary with GLOBAL
   `private_dns_mode` (only `off`, `opportunistic`, `hostname`) and GLOBAL
@@ -312,9 +312,10 @@ for each prior mode; stale-state refusal; write failure after the first step; re
 per-TV isolation; offline/unsupported TV; English/Tamil resource parity; and a real Android TV smoke
 test covering apply, browsing, reboot persistence and restore. CI must pass before a non-draft PR.
 
-This RFC is a proposal only. The model interface is marked frozen and requires Fable sign-off before
-adding the keys or implementing the feature. The earlier raw-command helper was exploratory and is
-removed by this proposal's cleanup; it must not be used by production code.
+This RFC is approved for implementation in the vijay3695/cleanyourtv-app fork by the repository owner
+on 2026-11-16. The upstream project's Fable approval process does not govern this independent fork.
+The earlier raw-command helper was exploratory and is removed by this proposal's cleanup; it must
+not be used by production code.
 
 
 ### Reference review: upstream app PR #12048 (2026-11-16)
