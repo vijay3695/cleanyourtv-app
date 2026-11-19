@@ -289,4 +289,22 @@
     <string name="report_issue_error">That isn\'t a link to an issue of this app on GitHub.</string>
     <string name="report_issue_save">Remember it</string>
     <string name="report_issue_open">Open the issue</string>
+    <string name="private_dns_title">Private DNS</string>
+    <string name="private_dns_note">Changes apply to this TV only. Android 9 or newer is required. This does not block every ad, including many YouTube ads.</string>
+    <string name="private_dns_current">Current TV setting</string>
+    <string name="private_dns_unknown">Not verified</string>
+    <string name="private_dns_off">Off</string>
+    <string name="private_dns_automatic">Automatic</string>
+    <string name="private_dns_custom">Custom hostname</string>
+    <string name="private_dns_choose">Choose a mode</string>
+    <string name="private_dns_off_note">Disable Private DNS on this TV.</string>
+    <string name="private_dns_auto_note">Let Android choose the DNS provider.</string>
+    <string name="private_dns_custom_note">Use a DNS-over-TLS provider hostname.</string>
+    <string name="private_dns_hostname">DNS hostname</string>
+    <string name="private_dns_refresh">Read from TV</string>
+    <string name="private_dns_apply">Review and apply</string>
+    <string name="private_dns_restore">Restore previous DNS settings</string>
+    <string name="private_dns_confirm_title">Change Private DNS?</string>
+    <string name="private_dns_confirm_note">The app will save the current TV setting, apply your choice, and read it back to verify. Your phone's DNS will not change.</string>
+    <string name="private_dns_confirm_apply">Apply to this TV</string>
 </resources>
