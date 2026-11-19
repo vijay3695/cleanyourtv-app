@@ -307,4 +307,8 @@
     <string name="private_dns_confirm_title">Change Private DNS?</string>
     <string name="private_dns_confirm_note">The app will save the current TV setting, apply your choice, and read it back to verify. Your phone's DNS will not change.</string>
     <string name="private_dns_confirm_apply">Apply to this TV</string>
+    <string name="private_dns_review_restore">Restore the DNS mode and hostname saved before the last change.</string>
+    <string name="private_dns_review_off">Selected mode: Off</string>
+    <string name="private_dns_review_auto">Selected mode: Automatic</string>
+    <string name="private_dns_review_hostname">Selected hostname: {host}</string>
 </resources>
