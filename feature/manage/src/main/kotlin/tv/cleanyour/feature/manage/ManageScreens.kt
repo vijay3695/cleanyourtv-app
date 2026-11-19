@@ -476,8 +476,50 @@ fun TvSettingsScreen(state: TvSettingsState, onIntent: (TvSettingsIntent) -> Uni
             ListRow(stringResource(R.string.tvsettings_address), subtitle = state.lastSeenAtMs?.let { msg(R.string.tvsettings_last_seen, "date" to shortDateTime(it, locale)) },
                 value = state.address)
         }
+        SectionLabel(stringResource(R.string.private_dns_title))
+        Body(stringResource(R.string.private_dns_note), Modifier.padding(top = 4.dp, bottom = 10.dp))
+        ListGroup {
+            ListRow(stringResource(R.string.private_dns_current), value = when (state.dnsMode) {
+                "off" -> stringResource(R.string.private_dns_off)
+                "opportunistic" -> stringResource(R.string.private_dns_automatic)
+                "hostname" -> state.dnsHost
+                else -> stringResource(R.string.private_dns_unknown)
+            })
+        }
+        Body(state.dnsStatus, Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp))
+        SecondaryButton(stringResource(R.string.private_dns_refresh), { onIntent(TvSettingsIntent.RefreshDns) },
+            Modifier.padding(top = 8.dp), enabled = !state.dnsLoading && !state.dnsBusy)
+        if (state.dnsSupported) {
+            SectionLabel(stringResource(R.string.private_dns_choose))
+            ChoiceList(
+                listOf(
+                    ChoiceOption("off", stringResource(R.string.private_dns_off), stringResource(R.string.private_dns_off_note), icon = null),
+                    ChoiceOption("opportunistic", stringResource(R.string.private_dns_automatic), stringResource(R.string.private_dns_auto_note), icon = null),
+                    ChoiceOption("hostname", stringResource(R.string.private_dns_custom), stringResource(R.string.private_dns_custom_note), icon = null),
+                ),
+                state.dnsChoice,
+                { onIntent(TvSettingsIntent.ChooseDnsMode(it.key)) },
+            )
+            if (state.dnsChoice == "hostname") {
+                CytTextField(state.dnsChoiceHost, { onIntent(TvSettingsIntent.DnsHostname(it)) }, stringResource(R.string.private_dns_hostname))
+            }
+            SecondaryButton(stringResource(R.string.private_dns_apply), { onIntent(TvSettingsIntent.AskApplyDns) },
+                Modifier.padding(top = 12.dp), enabled = !state.dnsBusy && !state.dnsLoading)
+            if (state.canRestoreDns) {
+                SecondaryButton(stringResource(R.string.private_dns_restore), { onIntent(TvSettingsIntent.RestoreDns) },
+                    Modifier.padding(top = 8.dp), enabled = !state.dnsBusy)
+            }
+        }
         SecondaryButton(stringResource(R.string.tvsettings_forget), { onIntent(TvSettingsIntent.AskForget) }, Modifier.padding(top = 24.dp), enabled = !state.forgetting)
         Body(stringResource(R.string.tvsettings_forget_explain), Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp, bottom = 24.dp))
+    }
+    if (state.confirmingDns) CytBottomSheet({ onIntent(TvSettingsIntent.CancelApplyDns) }) {
+        SheetHeader(stringResource(R.string.private_dns_confirm_title))
+        Body(stringResource(R.string.private_dns_confirm_note), Modifier.padding(top = 8.dp))
+        ActionColumn(Modifier.padding(top = 20.dp)) {
+            PrimaryButton(stringResource(R.string.private_dns_confirm_apply), { onIntent(TvSettingsIntent.ApplyDns) }, enabled = !state.dnsBusy)
+            TertiaryButton(stringResource(R.string.action_cancel), { onIntent(TvSettingsIntent.CancelApplyDns) }, quiet = true)
+        }
     }
     if (state.confirmingForget) CytBottomSheet({ onIntent(TvSettingsIntent.CancelForget) }) { ForgetContent(state.name, onIntent) }
 }
