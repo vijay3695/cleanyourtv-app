@@ -26,6 +26,7 @@ data class TvSettingsState(
     val dnsChoiceHost: String = "dns.adguard-dns.com",
     val dnsStatus: String = "Not checked",
     val confirmingDns: Boolean = false,
+    val dnsRestorePending: Boolean = false,
     val dnsBusy: Boolean = false,
     val canRestoreDns: Boolean = false,
 )
@@ -38,6 +39,7 @@ sealed interface TvSettingsIntent {
     data object AskApplyDns : TvSettingsIntent
     data object CancelApplyDns : TvSettingsIntent
     data object ApplyDns : TvSettingsIntent
+    data object AskRestoreDns : TvSettingsIntent
     data object RestoreDns : TvSettingsIntent
     data object AskForget : TvSettingsIntent
     data object CancelForget : TvSettingsIntent
@@ -65,7 +67,7 @@ class TvSettingsMachine(
         is Loaded -> event.s.copy(confirmingForget = state.confirmingForget, forgetting = state.forgetting,
             dnsSupported = state.dnsSupported, dnsLoading = state.dnsLoading, dnsMode = state.dnsMode,
             dnsHost = state.dnsHost, dnsChoice = state.dnsChoice, dnsChoiceHost = state.dnsChoiceHost,
-            dnsStatus = state.dnsStatus, confirmingDns = state.confirmingDns, dnsBusy = state.dnsBusy,
+            dnsStatus = state.dnsStatus, confirmingDns = state.confirmingDns, dnsRestorePending = state.dnsRestorePending, dnsBusy = state.dnsBusy,
             canRestoreDns = state.canRestoreDns)
         TvSettingsIntent.AskForget -> state.copy(confirmingForget = true)
         TvSettingsIntent.CancelForget -> state.copy(confirmingForget = false)
@@ -74,8 +76,9 @@ class TvSettingsMachine(
         is TvSettingsIntent.ChooseDnsMode -> state.copy(dnsChoice = event.mode)
         is TvSettingsIntent.DnsHostname -> state.copy(dnsChoiceHost = event.hostname.take(253))
         TvSettingsIntent.AskApplyDns -> state.copy(confirmingDns = true)
-        TvSettingsIntent.CancelApplyDns -> state.copy(confirmingDns = false)
-        is DnsChanged -> event.s.copy(confirmingForget = state.confirmingForget, forgetting = state.forgetting)
+        TvSettingsIntent.CancelApplyDns -> state.copy(confirmingDns = false, dnsRestorePending = false)
+        TvSettingsIntent.AskRestoreDns -> state.copy(confirmingDns = true, dnsRestorePending = true)
+        is DnsChanged -> event.s.copy(confirmingForget = state.confirmingForget, forgetting = state.forgetting, dnsRestorePending = false)
         else -> state
     }
     override fun handle(event: Any, before: TvSettingsState, after: TvSettingsState) {
@@ -86,8 +89,7 @@ class TvSettingsMachine(
             }
             is TvSettingsIntent.SetLevel -> scope.launch { d.tv(tvId)?.let { d.tvs.upsert(it.copy(level = event.level)) } }
             TvSettingsIntent.RefreshDns -> scope.launch { refreshDns() }
-            TvSettingsIntent.ApplyDns -> if (!before.dnsBusy) scope.launch { applyDns(before.dnsChoice, before.dnsChoiceHost) }
-            TvSettingsIntent.RestoreDns -> if (!before.dnsBusy) scope.launch { restoreDns() }
+            TvSettingsIntent.ApplyDns -> if (!before.dnsBusy) scope.launch { if (before.dnsRestorePending) restoreDns() else applyDns(before.dnsChoice, before.dnsChoiceHost) }
             TvSettingsIntent.Forget -> if (!before.forgetting) scope.launch { forget() }
             else -> {}
         }
@@ -118,7 +120,7 @@ class TvSettingsMachine(
         val host = value.trim().trimEnd('.').lowercase()
         return host.takeIf { SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(it) && !it.matches(Regex("[0-9.]+")) && ':' !in it }
     }
-    private suspend fun applyDns(mode: String, inputHost: String) {
+    private suspend fun applyDns(mode: String, inputHost: String, preserveBackup: Boolean = true) {
         send(DnsChanged(state.value.copy(dnsBusy = true, confirmingDns = false, dnsStatus = "Checking the TV before applying…")))
         try {
             if (mode !in setOf("off", "opportunistic", "hostname")) error("Choose a supported Private DNS mode")
@@ -131,7 +133,7 @@ class TvSettingsMachine(
             if (oldMode !in setOf("off", "opportunistic", "hostname")) error("The current DNS mode is unknown; nothing was changed")
             if (oldMode == "hostname" && (oldHost.isNullOrBlank() || !SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(oldHost)))
                 error("The current DNS hostname is unknown; nothing was changed")
-            d.documents.write(dnsBackupPath, (oldMode + "\n" + (oldHost ?: "")).encodeToByteArray())
+            if (preserveBackup) d.documents.write(dnsBackupPath, (oldMode + "\n" + (oldHost ?: "")).encodeToByteArray())
             val result = TvWriter(d).write(tvId, PlanRequest.SetPrivateDns(mode, host), fresh = true)
             if (result !is WriteResult.Done) error("The TV did not confirm the DNS change: $result")
             val verifySession = (d.access.session(tvId) as? AccessResult.Ok)?.session ?: error("DNS was changed, but the TV disconnected before verification. Reconnect and check its settings.")
@@ -140,8 +142,9 @@ class TvSettingsMachine(
             if (after.settings[SettingKey.PRIVATE_DNS_MODE] != mode ||
                 after.settings[SettingKey.PRIVATE_DNS_SPECIFIER] != expectedHost)
                 error("The TV's read-back did not match the requested DNS settings. Check the TV before trying again.")
+            if (!preserveBackup) d.documents.delete(dnsBackupPath)
             send(DnsChanged(state.value.copy(dnsBusy = false, dnsSupported = true, dnsMode = mode,
-                dnsHost = expectedHost.orEmpty(), dnsStatus = "Private DNS change verified on the TV", canRestoreDns = true)))
+                dnsHost = expectedHost.orEmpty(), dnsStatus = "Private DNS change verified on the TV", canRestoreDns = preserveBackup, dnsRestorePending = false)))
         } catch (e: Exception) {
             send(DnsChanged(state.value.copy(dnsBusy = false, dnsStatus = e.message ?: "Private DNS change failed")))
         }
@@ -156,7 +159,7 @@ class TvSettingsMachine(
         if (mode !in setOf("off", "opportunistic", "hostname") || (mode == "hostname" && validHostname(host.orEmpty()) == null)) {
             send(DnsChanged(state.value.copy(dnsStatus = "Saved DNS settings are incomplete; refusing to restore"))); return
         }
-        applyDns(mode!!, host.orEmpty())
+        applyDns(mode!!, host.orEmpty(), preserveBackup = false)
     }
 
     private suspend fun forget() {
