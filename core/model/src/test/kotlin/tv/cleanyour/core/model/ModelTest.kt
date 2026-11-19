@@ -36,6 +36,12 @@ class ModelTest {
         assertEquals("/data/local/tmp/cleanyourtv/home-ok-0123456789abcdef", RemotePath(RemoteDir.TMP, listOf("home-ok-0123456789abcdef")).absolute)
         assertTrue(SettingKey.ADB_ENABLED.valueShape.matches("0"))
         assertTrue(!SettingKey.ADB_ENABLED.valueShape.matches("1"))
+        assertTrue(SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches("dns.adguard-dns.com"))
+        assertTrue(!SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches("-bad.example"))
+        assertTrue(!SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches("bad-.example"))
+        assertTrue(!SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches("bad host.example"))
+        assertTrue(!SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches("a".repeat(64) + ".example"))
+
         assertTrue(SettingKey.SCREENSAVER_COMPONENTS.valueShape.matches("com.google.android.backdrop/.Backdrop"))
     }
 

@@ -571,5 +571,43 @@ class PlannerTest {
         val p = plan(PlanRequest.UseStockHome(stock), ours, journals)
         assertEquals(listOf(Op.Enable(stock.pkg), Op.SetHome(stock), Op.VerifyHome(stock), Op.PressHome), ops(p))
     }
+
+    @Test fun privateDnsCustomWritesHostnameBeforeEnablingAndJournalsBothValues() {
+        val snap = snapshot().withSettings(mapOf(SettingKey.PRIVATE_DNS_MODE to "opportunistic", SettingKey.PRIVATE_DNS_SPECIFIER to null))
+        val p = plan(PlanRequest.SetPrivateDns("hostname", "dns.adguard-dns.com"), snapshot = snap)
+        assertEquals(listOf(
+            Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, "dns.adguard-dns.com"),
+            Op.SettingsPut(SettingKey.PRIVATE_DNS_MODE, "hostname"),
+        ), ops(p))
+        assertEquals(Prior(settingValue = null), p.steps[0].prior)
+        assertEquals(Prior(settingValue = "opportunistic"), p.steps[1].prior)
+        assertEquals(PlanKind.PRIVATE_DNS, p.kind)
+    }
+
+    @Test fun privateDnsOffClearsTheOldHostnameAfterChangingMode() {
+        val snap = snapshot().withSettings(mapOf(SettingKey.PRIVATE_DNS_MODE to "hostname", SettingKey.PRIVATE_DNS_SPECIFIER to "dns.example.com"))
+        val p = plan(PlanRequest.SetPrivateDns("off"), snapshot = snap)
+        assertEquals(listOf(
+            Op.SettingsPut(SettingKey.PRIVATE_DNS_MODE, "off"),
+            Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, null),
+        ), ops(p))
+        assertEquals(Prior(settingValue = "hostname"), p.steps[0].prior)
+        assertEquals(Prior(settingValue = "dns.example.com"), p.steps[1].prior)
+    }
+
+    @Test fun privateDnsRestoreCanPutBackAnExactPriorSpecifierEvenWhenModeIsOff() {
+        val snap = snapshot().withSettings(mapOf(SettingKey.PRIVATE_DNS_MODE to "opportunistic", SettingKey.PRIVATE_DNS_SPECIFIER to null))
+        val p = plan(PlanRequest.SetPrivateDns("off", "legacy.example.com"), snapshot = snap)
+        assertEquals(Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, "legacy.example.com"), p.steps.last().op)
+    }
+
+    @Test fun privateDnsRejectsInvalidHostnamesAndUnsupportedAndroid() {
+        val snap = snapshot().withSettings(mapOf(SettingKey.PRIVATE_DNS_MODE to "opportunistic", SettingKey.PRIVATE_DNS_SPECIFIER to null))
+        for (host in listOf("bad host", "-bad.example", "bad-.example", "127.0.0.1", "a;reboot", "täst.example", "a".repeat(64) + ".example")) {
+            assertTrue(refused(PlanRequest.SetPrivateDns("hostname", host), snapshot = snap).isNotEmpty(), host)
+        }
+        val oldAndroid = snap.copy(facts = snap.facts.copy(sdk = 27))
+        assertTrue(refused(PlanRequest.SetPrivateDns("off"), snapshot = oldAndroid).isNotEmpty())
+    }
 }
 

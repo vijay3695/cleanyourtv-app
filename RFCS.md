@@ -264,3 +264,91 @@ a long filesystem name, and numbers only. `InstallStorage` (`:core:engine`) hold
 The chooser card of #3301 and #3305 is words only: `SetupMachine` reads the check's "got
 android/com.android.internal.app.ResolverActivity" from the journal and names the Home claimants the
 person installed on the card (never in the log or the report). Two `CopyKey`s are added.
+
+
+## RFC-PRIVATE-DNS-1: a guarded Private DNS setting for each TV (approved for this fork)
+
+The Manage screen should offer a separate **Private DNS** entry for the selected TV. Android Private
+DNS is a TV-wide Android setting (Android 9 and later), not an app-only DNS switch. It affects apps
+that use the system resolver; it cannot promise to remove YouTube ads or ads served from the same
+hosts as the content. The phone must never change its own Private DNS setting as a side effect.
+
+Default hostname: `dns.adguard-dns.com`. The person can choose Off, Automatic, or Provider hostname,
+edit the hostname, review the target TV and proposed change, then explicitly apply it. The hostname
+is a DNS-over-TLS hostname (not an IP address). Invalid input must be rejected before a TV command
+is planned. Do not silently fall back to another provider.
+
+Smallest safe implementation for this fork:
+
+- Extend the frozen `:core:model` `SettingKey` vocabulary with GLOBAL
+  `private_dns_mode` (only `off`, `opportunistic`, `hostname`) and GLOBAL
+  `private_dns_specifier` (a validated DNS hostname). Keep the existing `Op.SettingsPut`
+  renderer path; do not add a raw-shell operation or pass UI text to a shell template.
+- Add a single hostname validator in the model/ops boundary. Accept ASCII DNS labels only, enforce
+  label and total-length limits, normalize case and a trailing dot, and reject whitespace inside,
+  shell metacharacters, IP literals and malformed labels. Add renderer and parser tests for both keys.
+- Read both current GLOBAL values from the selected TV before any write. Preserve the exact prior
+  state for Undo/rollback, including an unset specifier and each supported mode. Do not substitute
+  `opportunistic` for a value the app did not understand without surfacing that condition.
+- Plan the two writes as one guarded change: set the specifier before selecting hostname mode;
+  when leaving hostname mode, set the requested mode and remove the stale specifier as appropriate.
+  The engine must use its normal stale-snapshot checks, journal, failure handling and Undo path.
+  Read both values back and report success only when they match the requested state. A partial write
+  must restore the captured prior values; if restoration cannot be verified, show an explicit
+  incomplete/needs-attention result rather than claiming success.
+- Keep the selected TV identity explicit throughout the flow. Store no global phone preference that
+  could be mistaken for the TV's applied state. If a remembered draft is useful, key it by TvId and
+  keep it distinct from the live values read from the TV.
+- Add a dedicated Private DNS row in the TV settings surface, with status derived from live TV reads,
+  hostname editing, a confirmation/preview step, loading/offline/error states, and clear Undo or
+  restore behaviour. Localize all new user-facing strings in English and Tamil.
+- Gate the feature on Android SDK 28+ and a readable/writable settings path. Unsupported firmware,
+  permission refusal, failed read-back, or lost ADB connection must fail closed without claiming
+  that DNS was changed.
+
+Acceptance tests: hostname grammar and hostile-input cases; renderer golden lines for both setting
+keys; typed read pairing; mode transitions (off/automatic/custom); unset prior values; exact rollback
+for each prior mode; stale-state refusal; write failure after the first step; read-back mismatch;
+per-TV isolation; offline/unsupported TV; English/Tamil resource parity; and a real Android TV smoke
+test covering apply, browsing, reboot persistence and restore. CI must pass before a non-draft PR.
+
+This RFC is approved for implementation in the vijay3695/cleanyourtv-app fork by the repository owner
+on 2026-11-16. The upstream project's Fable approval process does not govern this independent fork.
+The earlier raw-command helper was exploratory and is removed by this proposal's cleanup; it must
+not be used by production code.
+
+
+### Reference review: upstream app PR #12048 (2026-11-16)
+
+Reviewed: https://github.com/udhaykumarbala/cleanyourtv-app/pull/12048 (author: thakoralpesh3;
+currently open). The useful architectural approach is sound: add the two GLOBAL setting keys to the
+existing typed `SettingKey` allowlist, represent the operation as a typed `PlanRequest`, let
+`:core:planner` produce ordinary `Op.SettingsPut` steps with captured `Prior` values, and expose it
+through the existing per-TV settings machine and Manage UI. This is the approach to adapt, not a
+separate shell-command mechanism.
+
+Do not copy these parts of that PR:
+
+- It also adds a workflow that builds and publishes a release APK on pushes to every branch. This is
+  unrelated to DNS and must not be brought into this feature.
+- It lowers the phone app minimum SDK from 28 to 26 and changes the APK check to match. That is a
+  separate compatibility decision; DNS itself requires Android 9 / API 28 on the TV. Do not change
+  the phone app's minSdk for this feature.
+- It schedules AdGuard DNS automatically at the end of every Setup plan. This is an unexpected,
+  system-wide network change and conflicts with the requested explicit, separate Settings control.
+  DNS must remain opt-in and must never be silently enabled by Setup.
+- Its UI offers only a fixed AdGuard toggle and Off. The requested feature needs an editable
+  hostname and must preserve/report an existing custom provider without mislabelling it.
+- In the reviewed machine code, after a successful write result, failed live read-back falls back to
+  the requested mode/specifier and still emits a success snackbar. Our implementation must not do
+  that: success is allowed only after a fresh read confirms both values. An unreadable or mismatched
+  result is an unverified outcome, not success.
+- The PR currently has no submitted reviews or review comments, and its head status is pending with
+  no check runs reported by GitHub at the time of review. It is not evidence of maintainer approval
+  or passing CI yet.
+
+Our implementation should retain the useful typed planner/rollback pattern, but make the setting
+change a separately confirmed, per-TV action; validate and normalize the editable hostname at the
+boundary; capture both old values; explicitly handle stale specifiers and unset values; read both
+settings back before reporting success; and test failure/rollback and API 28+ behaviour. Keep the
+model change behind the required frozen-interface RFC/sign-off. No code from PR #12048 is copied.

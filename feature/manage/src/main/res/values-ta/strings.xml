@@ -242,4 +242,26 @@
     <string name="report_issue_error">அது GitHub-இல் உள்ள இந்தச் செயலியின் issue-க்கான இணைப்பு அல்ல.</string>
     <string name="report_issue_save">நினைவில் வைத்துக்கொள்ளவும்</string>
     <string name="report_issue_open">Issue-ஐத் திறக்கவும்</string>
+    <string name="private_dns_title">தனிப்பட்ட DNS</string>
+    <string name="private_dns_note">இந்த மாற்றம் இந்த டிவிக்கு மட்டுமே பொருந்தும். Android 9 அல்லது புதிய பதிப்பு தேவை. YouTube விளம்பரங்கள் உட்பட எல்லா விளம்பரங்களையும் இது தடுக்காது.</string>
+    <string name="private_dns_current">டிவியின் தற்போதைய அமைப்பு</string>
+    <string name="private_dns_unknown">சரிபார்க்கப்படவில்லை</string>
+    <string name="private_dns_off">முடக்கு</string>
+    <string name="private_dns_automatic">தானியங்கி</string>
+    <string name="private_dns_custom">தனிப்பயன் ஹோஸ்ட்பெயர்</string>
+    <string name="private_dns_choose">முறையைத் தேர்ந்தெடுக்கவும்</string>
+    <string name="private_dns_off_note">இந்த டிவியில் தனிப்பட்ட DNS-ஐ முடக்கும்.</string>
+    <string name="private_dns_auto_note">DNS வழங்குநரை Android தேர்ந்தெடுக்கட்டும்.</string>
+    <string name="private_dns_custom_note">DNS-over-TLS வழங்குநரின் ஹோஸ்ட்பெயரைப் பயன்படுத்தவும்.</string>
+    <string name="private_dns_hostname">DNS ஹோஸ்ட்பெயர்</string>
+    <string name="private_dns_refresh">டிவியிலிருந்து படிக்கவும்</string>
+    <string name="private_dns_apply">மதிப்பாய்வு செய்து பயன்படுத்து</string>
+    <string name="private_dns_restore">முந்தைய DNS அமைப்புகளை மீட்டமை</string>
+    <string name="private_dns_confirm_title">தனிப்பட்ட DNS-ஐ மாற்றவா?</string>
+    <string name="private_dns_confirm_note">தற்போதைய டிவி அமைப்பைச் சேமித்து, உங்கள் தேர்வைப் பயன்படுத்தி, மீண்டும் படித்து சரிபார்க்கும். உங்கள் தொலைபேசியின் DNS மாறாது.</string>
+    <string name="private_dns_confirm_apply">இந்த டிவியில் பயன்படுத்து</string>
+    <string name="private_dns_review_restore">கடைசி மாற்றத்திற்கு முன் சேமித்த DNS முறையையும் ஹோஸ்ட்பெயரையும் மீட்டமைக்கவும்.</string>
+    <string name="private_dns_review_off">தேர்ந்தெடுத்த முறை: முடக்கு</string>
+    <string name="private_dns_review_auto">தேர்ந்தெடுத்த முறை: தானியங்கி</string>
+    <string name="private_dns_review_hostname">தேர்ந்தெடுத்த ஹோஸ்ட்பெயர்: {host}</string>
 </resources>
