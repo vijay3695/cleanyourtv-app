@@ -515,7 +515,15 @@ fun TvSettingsScreen(state: TvSettingsState, onIntent: (TvSettingsIntent) -> Uni
     }
     if (state.confirmingDns) CytBottomSheet({ onIntent(TvSettingsIntent.CancelApplyDns) }) {
         SheetHeader(stringResource(R.string.private_dns_confirm_title))
-        Body(stringResource(R.string.private_dns_confirm_note), Modifier.padding(top = 8.dp))
+        Body(
+            if (state.dnsRestorePending) stringResource(R.string.private_dns_review_restore)
+            else stringResource(R.string.private_dns_confirm_note) + "\n" + when (state.dnsChoice) {
+                "off" -> stringResource(R.string.private_dns_review_off)
+                "opportunistic" -> stringResource(R.string.private_dns_review_auto)
+                else -> msg(R.string.private_dns_review_hostname, "host" to state.dnsChoiceHost)
+            },
+            Modifier.padding(top = 8.dp)
+        )
         ActionColumn(Modifier.padding(top = 20.dp)) {
             PrimaryButton(stringResource(R.string.private_dns_confirm_apply), { onIntent(TvSettingsIntent.ApplyDns) }, enabled = !state.dnsBusy)
             TertiaryButton(stringResource(R.string.action_cancel), { onIntent(TvSettingsIntent.CancelApplyDns) }, quiet = true)
