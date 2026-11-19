@@ -15,6 +15,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import tv.cleanyour.android.platform.ApkTransferExecutor
+import tv.cleanyour.android.platform.ApkTransferStager
+import tv.cleanyour.core.model.ConnectionState
+import tv.cleanyour.core.model.RemoteDir
+import tv.cleanyour.core.model.RemotePath
+import tv.cleanyour.core.session.OpenResult
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -238,6 +247,31 @@ fun AppRoot(graph: AppGraph, start: Dest, onExit: () -> Unit, onLanguageSelected
         }
     }
 
+    // Send one APK selected through Android's document picker. The URI is copied into private
+    // staging, inspected, reviewed, then pushed to the currently selected trusted TV.
+    var apkTarget by remember { mutableStateOf<TvId?>(null) }
+    var stagedApk by remember { mutableStateOf<ApkTransferStager.StagedApk?>(null) }
+    var apkBusy by remember { mutableStateOf(false) }
+    var apkProgress by remember { mutableStateOf(0L) }
+    var apkMessage by remember { mutableStateOf<String?>(null) }
+    var apkRemotePath by remember { mutableStateOf<String?>(null) }
+    val pickApk = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val target = apkTarget
+        if (uri != null && target != null) scope.launch {
+            apkBusy = true
+            apkMessage = "Inspecting selected APK…"
+            try {
+                val stager = ApkTransferStager(context.contentResolver, java.io.File(context.cacheDir, "apk-transfer"), graph.blobs, graph.inspector)
+                stagedApk = withContext(Dispatchers.IO) { stager.stage(uri) }
+                apkMessage = "Review the APK details before sending it."
+            } catch (failure: Throwable) {
+                apkMessage = failure.message ?: "Could not inspect this APK."
+            } finally {
+                apkBusy = false
+            }
+        }
+    }
+
     suspend fun onSetupEffect(e: SetupEffect) = when (e) {
         SetupEffect.HapticLight -> haptic(HapticFeedbackConstants.CLOCK_TICK)
         SetupEffect.HapticDouble -> haptic(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY)
@@ -298,7 +332,13 @@ fun AppRoot(graph: AppGraph, start: Dest, onExit: () -> Unit, onLanguageSelected
                         m.dispatch(tv.cleanyour.core.flows.ManageIntent.Resumed)
                         onPauseOrDispose { m.dispatch(tv.cleanyour.core.flows.ManageIntent.Paused) }
                     }
-                    ManageScreen(state, m::dispatch, onLanguageSelected = onLanguageSelected)
+                    ManageScreen(state, m::dispatch, onLanguageSelected = onLanguageSelected, onSendApk = {
+                        apkTarget = key.tvId?.let(::TvId) ?: state.current?.id
+                        stagedApk = null
+                        apkMessage = "Choose one APK from your phone."
+                        apkRemotePath = null
+                        pickApk.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
+                    })
                 }
                 entry<Dest.SwitchedOff> { key ->
                     val m = rememberMachine("off:${key.tvId}") { graph.switchedOff(it, TvId(key.tvId)) }
@@ -394,6 +434,88 @@ fun AppRoot(graph: AppGraph, start: Dest, onExit: () -> Unit, onLanguageSelected
             // 0.4.8: "Enter the TV's address" on the step: the wait tries the typed address with the known-TV rules.
             onAddress = { text -> reach.tvIdOrNull()?.let { graph.access.tryAddress(it, text) } ?: false })
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+        if (apkMessage != null || stagedApk != null) {
+            val apk = stagedApk
+            AlertDialog(
+                onDismissRequest = {
+                    if (!apkBusy) {
+                        apk?.let { staged -> scope.launch { runCatching { graph.blobs.delete(staged.blob.sha256) } } }
+                        stagedApk = null
+                        apkMessage = null
+                        apkTarget = null
+                    }
+                },
+                title = { Text("Send APK to TV") },
+                text = {
+                    androidx.compose.foundation.layout.Column {
+                        if (apk != null) {
+                            Text("Package: ${apk.info.pkg.value}")
+                            Text("Version: ${apk.info.versionName} (${apk.info.versionCode})")
+                            Text("Size: ${apk.info.size} bytes")
+                            Text("Signer SHA-256: ${apk.info.signer.hex}")
+                            Text("File SHA-256: ${apk.info.sha256.hex}")
+                        }
+                        Text(apkMessage.orEmpty())
+                        if (apkBusy && apk != null) {
+                            Text("Transferred: $apkProgress / ${apk.info.size} bytes")
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { if (apk.info.size > 0) (apkProgress.toFloat() / apk.info.size).coerceIn(0f, 1f) else 0f },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        apkRemotePath?.let { Text("TV file: $it") }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = apk != null && !apkBusy && apkRemotePath == null,
+                        onClick = {
+                            val selected = apk ?: return@TextButton
+                            val target = apkTarget ?: return@TextButton
+                            apkBusy = true
+                            apkProgress = 0L
+                            apkMessage = "Connecting to the selected TV…"
+                            scope.launch {
+                                try {
+                                    val savedTv = graph.tvs.tvs.value.firstOrNull { it.id == target }
+                                        ?: error("The selected TV is no longer saved in this app.")
+                                    var session = graph.sessions.existing(target)
+                                    if (session == null || session.state.value !is ConnectionState.Connected) {
+                                        val endpoint = savedTv.endpoints.firstOrNull()
+                                            ?: error("No saved connection address exists for this TV. Reconnect to it first.")
+                                        when (val opened = graph.sessions.openKnown(endpoint, target)) {
+                                            is OpenResult.Ok -> session = opened.session
+                                            is OpenResult.Failed -> error("Could not reconnect to the selected TV: ${opened.error}")
+                                        }
+                                    }
+                                    val destination = RemotePath(RemoteDir.TMP, listOf("phone-${selected.info.sha256.hex.take(16)}.apk"))
+                                    apkMessage = "Sending APK and verifying the TV copy…"
+                                    val result = ApkTransferExecutor().transfer(target, session!!, selected, destination) { sent -> apkProgress = sent }
+                                    apkRemotePath = destination.absolute
+                                    apkMessage = if (result.remoteSha256 == selected.info.sha256) {
+                                        "Sent successfully. The TV copy's SHA-256 matches the phone's APK."
+                                    } else {
+                                        "Transfer ended without a verified TV hash. Do not use this copy."
+                                    }
+                                } catch (failure: Throwable) {
+                                    apkMessage = failure.message ?: "APK transfer failed."
+                                } finally {
+                                    apkBusy = false
+                                }
+                            }
+                        }
+                    ) { Text(if (apkRemotePath == null) "Send to TV" else "Sent") }
+                },
+                dismissButton = {
+                    TextButton(enabled = !apkBusy, onClick = {
+                        apk?.let { staged -> scope.launch { runCatching { graph.blobs.delete(staged.blob.sha256) } } }
+                        stagedApk = null
+                        apkMessage = null
+                        apkTarget = null
+                    }) { Text("Close") }
+                }
+            )
+        }
     }
 }
 
