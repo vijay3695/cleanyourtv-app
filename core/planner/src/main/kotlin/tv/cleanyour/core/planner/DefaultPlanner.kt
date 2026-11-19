@@ -1014,8 +1014,9 @@ class DefaultPlanner(
             } else {
                 step(Op.SettingsPut(SettingKey.PRIVATE_DNS_MODE, mode), Prior(settingValue = oldMode), GROUP_PRIVATE_DNS,
                     "Changing Private DNS mode", FailurePolicy.STOP_AND_ROLLBACK)
-                step(Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, null), Prior(settingValue = oldHost), GROUP_PRIVATE_DNS,
-                    "Clearing the previous Private DNS hostname", FailurePolicy.STOP_AND_ROLLBACK)
+                step(Op.SettingsPut(SettingKey.PRIVATE_DNS_SPECIFIER, request.hostname), Prior(settingValue = oldHost), GROUP_PRIVATE_DNS,
+                    if (request.hostname == null) "Clearing the previous Private DNS hostname" else "Restoring the previous Private DNS hostname",
+                    FailurePolicy.STOP_AND_ROLLBACK)
             }
         }
 
