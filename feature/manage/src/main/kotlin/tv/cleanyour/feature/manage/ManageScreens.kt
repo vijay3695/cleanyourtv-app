@@ -104,7 +104,7 @@ private val titleTop = Modifier.padding(top = 20.dp)
 
 // M1 Manage: the app's home once a TV exists. Nothing is more than two taps away.
 @Composable
-fun ManageScreen(state: ManageState, onIntent: (ManageIntent) -> Unit, modifier: Modifier = Modifier, onLanguageSelected: ((String) -> Unit)? = null) {
+fun ManageScreen(state: ManageState, onIntent: (ManageIntent) -> Unit, modifier: Modifier = Modifier, onLanguageSelected: ((String) -> Unit)? = null, onSendApk: (() -> Unit)? = null) {
     val tv = state.current
     val locale = LocalConfiguration.current.locales[0]
     ScreenScaffold(Glow.Tv, modifier, topBar = {
@@ -151,6 +151,7 @@ fun ManageScreen(state: ManageState, onIntent: (ManageIntent) -> Unit, modifier:
                 level = stringResource(if (tv.level == Level.CUSTOM) R.string.manage_level_custom else R.string.manage_level_simple),
                 onClick = { onIntent(ManageIntent.RefreshThumbnail) },
             )
+            if (onSendApk != null) SecondaryButton("Send APK to TV", onSendApk, Modifier.padding(top = 10.dp))
             // Navigation into the wizard, whose own "Make it clean" is the guarded action (R5-W8 O1).
             // 0.4.7 (PM 11): "Run Setup again" stays visible for every TV, the one name for the way back in.
             // 0.4.7 (StockHomeBack): the TV turned its own home screen back on, so Run Setup again is the way back.
