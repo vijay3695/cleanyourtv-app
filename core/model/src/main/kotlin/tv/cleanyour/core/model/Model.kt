@@ -105,7 +105,7 @@ enum class SettingKey(val ns: SettingsNs, val key: String, val valueShape: Regex
     ADB_WIFI_ENABLED(SettingsNs.GLOBAL, "adb_wifi_enabled", Regex("^0$")),
     DEVICE_NAME(SettingsNs.GLOBAL, "device_name", Regex("^[A-Za-z0-9 ._-]{1,32}$")),
     PRIVATE_DNS_MODE(SettingsNs.GLOBAL, "private_dns_mode", Regex("^(off|opportunistic|hostname)$")),
-    PRIVATE_DNS_SPECIFIER(SettingsNs.GLOBAL, "private_dns_specifier", Regex("^[A-Za-z0-9.-]{1,253}$")) }
+    PRIVATE_DNS_SPECIFIER(SettingsNs.GLOBAL, "private_dns_specifier", Regex("^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")) }
 
 enum class GroupDefault { DISABLE, ASK, KEEP }
 enum class Platform { ANDROID_TV, GOOGLE_TV, FIRE_OS, TCL_CN }
