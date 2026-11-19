@@ -62,7 +62,7 @@ class ApkTransferStager(
             }
             if (size == 0L) throw IOException("The selected file is empty.")
             val sha = Sha256(digest.digest().joinToString("") { "%02x".format(it) })
-            staged = blobs.put(sha, FileInputStream(temporary), size)
+            FileInputStream(temporary).use { staged = blobs.put(sha, it, size) }
             val info = inspector.inspect(staged) ?: throw IOException("Android could not read a single-signer APK from this file.")
             if (info.sha256 != sha || info.size != size) throw IOException("The APK changed while it was being inspected.")
             StagedApk(staged, info)
