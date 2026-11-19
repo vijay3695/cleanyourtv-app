@@ -5,7 +5,7 @@ import tv.cleanyour.core.model.BlobRef
 import tv.cleanyour.core.model.ConnectionState
 import tv.cleanyour.core.model.RemotePath
 import tv.cleanyour.core.model.ShellLine
-import tv.cleanyour.core.store.RawShell
+import tv.cleanyour.core.model.RawShell
 import tv.cleanyour.core.model.TvId
 import tv.cleanyour.core.session.InstallOutcome
 import tv.cleanyour.core.session.PushResult
