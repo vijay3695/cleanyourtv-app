@@ -5,10 +5,11 @@ import kotlinx.coroutines.launch
 import tv.cleanyour.core.engine.Engine
 import tv.cleanyour.core.engine.RunState
 import tv.cleanyour.core.model.Level
+import tv.cleanyour.core.model.SettingKey
 import tv.cleanyour.core.model.TvId
+import tv.cleanyour.core.planner.PlanRequest
 
-// M7 TV settings: name and room, level (D46: per TV), the address (read-only), "Forget this TV"
-// (credential prompt; deletes the record, the journals and the restore points on this phone).
+// M7 TV settings, including an explicit, per-TV Private DNS workflow.
 data class TvSettingsState(
     val name: String = "",
     val room: String? = null,
@@ -17,71 +18,159 @@ data class TvSettingsState(
     val lastSeenAtMs: Long? = null,
     val confirmingForget: Boolean = false,
     val forgetting: Boolean = false,
+    val dnsSupported: Boolean = false,
+    val dnsLoading: Boolean = false,
+    val dnsMode: String? = null,
+    val dnsHost: String = "",
+    val dnsChoice: String = "hostname",
+    val dnsChoiceHost: String = "dns.adguard-dns.com",
+    val dnsStatus: String = "Not checked",
+    val confirmingDns: Boolean = false,
+    val dnsBusy: Boolean = false,
+    val canRestoreDns: Boolean = false,
 )
-
 sealed interface TvSettingsIntent {
     data class Rename(val name: String, val room: String?) : TvSettingsIntent
     data class SetLevel(val level: Level) : TvSettingsIntent
+    data object RefreshDns : TvSettingsIntent
+    data class ChooseDnsMode(val mode: String) : TvSettingsIntent
+    data class DnsHostname(val hostname: String) : TvSettingsIntent
+    data object AskApplyDns : TvSettingsIntent
+    data object CancelApplyDns : TvSettingsIntent
+    data object ApplyDns : TvSettingsIntent
+    data object RestoreDns : TvSettingsIntent
     data object AskForget : TvSettingsIntent
     data object CancelForget : TvSettingsIntent
     data object Forget : TvSettingsIntent
 }
-
 class TvSettingsMachine(
     private val d: ManageDeps,
     scope: CoroutineScope,
     private val tvId: TvId,
 ) : Machine<TvSettingsState, TvSettingsIntent, ManageEffect>(TvSettingsState(), scope) {
-
     private data class Loaded(val s: TvSettingsState)
     private data class Forgetting(val on: Boolean)
+    private data class DnsChanged(val s: TvSettingsState)
+    private val dnsBackupPath = "tvs/${tvId.value}/private-dns.txt"
 
-    init { scope.launch { d.tvs.tvs.collect { list -> list.firstOrNull { it.id == tvId }?.let { tv ->
-        send(Loaded(TvSettingsState(tv.nickname, tv.room, tv.level, tv.endpoints.firstOrNull()?.host, tv.lastSeenAt)))
-    } } } }
-
+    init {
+        scope.launch {
+            d.tvs.tvs.collect { list -> list.firstOrNull { it.id == tvId }?.let { tv ->
+                send(Loaded(TvSettingsState(tv.nickname, tv.room, tv.level, tv.endpoints.firstOrNull()?.host, tv.lastSeenAt)))
+            } }
+        }
+        scope.launch { refreshDns() }
+    }
     override fun reduce(state: TvSettingsState, event: Any): TvSettingsState = when (event) {
-        is Loaded -> event.s.copy(confirmingForget = state.confirmingForget, forgetting = state.forgetting)
+        is Loaded -> event.s.copy(confirmingForget = state.confirmingForget, forgetting = state.forgetting,
+            dnsSupported = state.dnsSupported, dnsLoading = state.dnsLoading, dnsMode = state.dnsMode,
+            dnsHost = state.dnsHost, dnsChoice = state.dnsChoice, dnsChoiceHost = state.dnsChoiceHost,
+            dnsStatus = state.dnsStatus, confirmingDns = state.confirmingDns, dnsBusy = state.dnsBusy,
+            canRestoreDns = state.canRestoreDns)
         TvSettingsIntent.AskForget -> state.copy(confirmingForget = true)
         TvSettingsIntent.CancelForget -> state.copy(confirmingForget = false)
         is Forgetting -> state.copy(forgetting = event.on, confirmingForget = false)
+        TvSettingsIntent.RefreshDns -> state.copy(dnsLoading = true, dnsStatus = "Reading settings from this TV…")
+        is TvSettingsIntent.ChooseDnsMode -> state.copy(dnsChoice = event.mode)
+        is TvSettingsIntent.DnsHostname -> state.copy(dnsChoiceHost = event.hostname.take(253))
+        TvSettingsIntent.AskApplyDns -> state.copy(confirmingDns = true)
+        TvSettingsIntent.CancelApplyDns -> state.copy(confirmingDns = false)
+        is DnsChanged -> event.s.copy(confirmingForget = state.confirmingForget, forgetting = state.forgetting)
         else -> state
     }
-
     override fun handle(event: Any, before: TvSettingsState, after: TvSettingsState) {
         when (event) {
             is TvSettingsIntent.Rename -> scope.launch {
                 val name = event.name.trim().take(40)
                 if (name.isNotEmpty()) d.tv(tvId)?.let { d.tvs.upsert(it.copy(nickname = name, room = event.room?.trim()?.take(40)?.ifEmpty { null })) }
             }
-            // "Back to Simple hides the extra options. Your TV stays as it is." (UX 3)
             is TvSettingsIntent.SetLevel -> scope.launch { d.tv(tvId)?.let { d.tvs.upsert(it.copy(level = event.level)) } }
+            TvSettingsIntent.RefreshDns -> scope.launch { refreshDns() }
+            TvSettingsIntent.ApplyDns -> if (!before.dnsBusy) scope.launch { applyDns(before.dnsChoice, before.dnsChoiceHost) }
+            TvSettingsIntent.RestoreDns -> if (!before.dnsBusy) scope.launch { restoreDns() }
             TvSettingsIntent.Forget -> if (!before.forgetting) scope.launch { forget() }
             else -> {}
         }
     }
 
+    private suspend fun refreshDns() {
+        send(DnsChanged(state.value.copy(dnsLoading = true, dnsStatus = "Reading settings from this TV…")))
+        try {
+            val session = (d.access.session(tvId) as? AccessResult.Ok)?.session
+                ?: throw IllegalStateException("Could not connect to the selected TV")
+            val snap = d.runner.readSnapshot(session)
+            val mode = snap.settings[SettingKey.PRIVATE_DNS_MODE]
+            val host = snap.settings[SettingKey.PRIVATE_DNS_SPECIFIER]
+            if (snap.facts.sdk < 28) throw IllegalStateException("Private DNS requires Android 9 (API 28) or newer")
+            if (mode !in setOf("off", "opportunistic", "hostname")) throw IllegalStateException("The TV did not return a supported Private DNS mode")
+            if (mode == "hostname" && (host.isNullOrBlank() || !SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(host)))
+                throw IllegalStateException("The TV's current DNS hostname could not be read safely")
+            val backup = d.documents.read(dnsBackupPath) { it.decodeToString() }
+            send(DnsChanged(state.value.copy(dnsLoading = false, dnsSupported = true, dnsMode = mode, dnsHost = host.orEmpty(),
+                dnsStatus = "Current TV settings verified", canRestoreDns = backup != null)))
+        } catch (e: Exception) {
+            send(DnsChanged(state.value.copy(dnsLoading = false, dnsSupported = false, dnsMode = null,
+                dnsStatus = e.message ?: "Could not read Private DNS settings")))
+        }
+    }
+
+    private fun validHostname(value: String): String? {
+        val host = value.trim().trimEnd('.').lowercase()
+        return host.takeIf { SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(it) && !it.matches(Regex("[0-9.]+")) && ':' !in it }
+    }
+    private suspend fun applyDns(mode: String, inputHost: String) {
+        send(DnsChanged(state.value.copy(dnsBusy = true, confirmingDns = false, dnsStatus = "Checking the TV before applying…")))
+        try {
+            if (mode !in setOf("off", "opportunistic", "hostname")) error("Choose a supported Private DNS mode")
+            val host = if (mode == "hostname") validHostname(inputHost) ?: error("Enter a valid DNS hostname") else null
+            val session = (d.access.session(tvId) as? AccessResult.Ok)?.session ?: error("Could not connect to the selected TV")
+            val before = d.runner.readSnapshot(session)
+            if (before.facts.sdk < 28) error("Private DNS requires Android 9 (API 28) or newer")
+            val oldMode = before.settings[SettingKey.PRIVATE_DNS_MODE]
+            val oldHost = before.settings[SettingKey.PRIVATE_DNS_SPECIFIER]
+            if (oldMode !in setOf("off", "opportunistic", "hostname")) error("The current DNS mode is unknown; nothing was changed")
+            if (oldMode == "hostname" && (oldHost.isNullOrBlank() || !SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(oldHost)))
+                error("The current DNS hostname is unknown; nothing was changed")
+            d.documents.write(dnsBackupPath, (oldMode + "\n" + (oldHost ?: "")).encodeToByteArray())
+            val result = TvWriter(d).write(tvId, PlanRequest.SetPrivateDns(mode, host), fresh = true)
+            if (result !is WriteResult.Done) error("The TV did not confirm the DNS change: $result")
+            val verifySession = (d.access.session(tvId) as? AccessResult.Ok)?.session ?: error("DNS was changed, but the TV disconnected before verification. Reconnect and check its settings.")
+            val after = d.runner.readSnapshot(verifySession)
+            val expectedHost = host
+            if (after.settings[SettingKey.PRIVATE_DNS_MODE] != mode ||
+                after.settings[SettingKey.PRIVATE_DNS_SPECIFIER] != expectedHost)
+                error("The TV's read-back did not match the requested DNS settings. Check the TV before trying again.")
+            send(DnsChanged(state.value.copy(dnsBusy = false, dnsSupported = true, dnsMode = mode,
+                dnsHost = expectedHost.orEmpty(), dnsStatus = "Private DNS change verified on the TV", canRestoreDns = true)))
+        } catch (e: Exception) {
+            send(DnsChanged(state.value.copy(dnsBusy = false, dnsStatus = e.message ?: "Private DNS change failed")))
+        }
+    }
+    private suspend fun restoreDns() {
+        val saved = d.documents.read(dnsBackupPath) { it.decodeToString() } ?: run {
+            send(DnsChanged(state.value.copy(dnsStatus = "No saved previous DNS settings"))); return
+        }
+        val lines = saved.split('\n')
+        val mode = lines.getOrNull(0)
+        val host = lines.getOrNull(1).orEmpty().ifEmpty { null }
+        if (mode !in setOf("off", "opportunistic", "hostname") || (mode == "hostname" && validHostname(host.orEmpty()) == null)) {
+            send(DnsChanged(state.value.copy(dnsStatus = "Saved DNS settings are incomplete; refusing to restore"))); return
+        }
+        applyDns(mode!!, host.orEmpty())
+    }
+
     private suspend fun forget() {
         val tv = d.tv(tvId) ?: return
-        // A run still at work on this TV (step R included) is never cut off from here: its journal is
-        // what puts the TV's own home screen back. Wait for it, or stop it first.
         if (d.engine.isWorking(tvId)) { send(Forgetting(false)); effect(ManageEffect.Snackbar(SnackKind.RUN_BUSY, tv.nickname, undo = false)); return }
         d.gate.pass(tvId, tv.nickname) ?: return send(Forgetting(false))
         if (d.engine.isWorking(tvId)) { send(Forgetting(false)); effect(ManageEffect.Snackbar(SnackKind.RUN_BUSY, tv.nickname, undo = false)); return }
         send(Forgetting(true))
-        // D7: closing the session ends it, so debugging goes off first if a write ran this session.
         attempt { d.sessionEnd.end(tvId) }
         attempt { d.sessions.existing(tvId)?.close() }
         d.documents.deleteTree("tvs/${tvId.value}")
-        d.ledger.forget(tvId)
-        d.gate.forget(tvId)
-        d.tvs.forget(tvId)
-        // Issue #2: the engine drops its in-memory run for this TV once the journal is gone (an
-        // abandon of a forgotten run needs no TV), so a stuck setup ends here without a force stop
-        // and a new Setup is not refused RUN_OPEN. After the record is gone, so nothing reconnects.
+        d.ledger.forget(tvId); d.gate.forget(tvId); d.tvs.forget(tvId)
         attempt { d.engine.abandon(tvId) }
-        send(Forgetting(false))
-        effect(ManageEffect.Navigate("home"))
+        send(Forgetting(false)); effect(ManageEffect.Navigate("home"))
     }
 }
 
