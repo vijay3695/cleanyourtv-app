@@ -4,6 +4,8 @@ import tv.cleanyour.core.model.AdbException
 import tv.cleanyour.core.model.BlobRef
 import tv.cleanyour.core.model.ConnectionState
 import tv.cleanyour.core.model.RemotePath
+import tv.cleanyour.core.model.ShellLine
+import tv.cleanyour.core.store.RawShell
 import tv.cleanyour.core.model.TvId
 import tv.cleanyour.core.session.InstallOutcome
 import tv.cleanyour.core.session.PushResult
@@ -14,6 +16,7 @@ import tv.cleanyour.core.session.TvSession
  * It never opens an arbitrary endpoint: the caller must supply the selected TV id and its session.
  */
 class ApkTransferExecutor {
+    @OptIn(RawShell::class)
     suspend fun transfer(
         expectedTv: TvId,
         session: TvSession,
@@ -32,6 +35,8 @@ class ApkTransferExecutor {
             if (session.state.value !is ConnectionState.Connected) {
                 throw IllegalStateException("The TV connection was lost before the transfer started.")
             }
+            val directory = session.exec(ShellLine("mkdir -p /data/local/tmp/cleanyourtv"))
+            check(directory.exit == 0) { "Could not prepare the TV's APK receive folder: ${directory.stderr.take(160)}" }
             val result = session.push(apk.blob, destination, onProgress)
             if (result.bytes != apk.info.size || result.remoteSha256 != apk.info.sha256) {
                 throw IllegalStateException("The TV did not confirm the exact APK bytes. Installation is unavailable.")
