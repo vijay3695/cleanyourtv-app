@@ -44,3 +44,5 @@ jobs:
           fi
           git commit -m "test(manage): refresh TV settings screenshot baselines"
           git push
+
+# Full CI must run on the commit containing the regenerated baselines.
