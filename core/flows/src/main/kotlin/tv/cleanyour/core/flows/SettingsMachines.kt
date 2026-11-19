@@ -124,7 +124,8 @@ class TvSettingsMachine(
         send(DnsChanged(state.value.copy(dnsBusy = true, confirmingDns = false, dnsStatus = "Checking the TV before applying…")))
         try {
             if (mode !in setOf("off", "opportunistic", "hostname")) error("Choose a supported Private DNS mode")
-            val host = if (mode == "hostname") validHostname(inputHost) ?: error("Enter a valid DNS hostname") else null
+            val host = if (mode == "hostname") validHostname(inputHost) ?: error("Enter a valid DNS hostname")
+                else if (!preserveBackup) inputHost.takeIf { it.isNotEmpty() } else null
             val session = (d.access.session(tvId) as? AccessResult.Ok)?.session ?: error("Could not connect to the selected TV")
             val before = d.runner.readSnapshot(session)
             if (before.facts.sdk < 28) error("Private DNS requires Android 9 (API 28) or newer")
