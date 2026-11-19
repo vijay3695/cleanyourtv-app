@@ -5,7 +5,7 @@ import android.net.Uri
 import tv.cleanyour.core.model.ApkInfo
 import tv.cleanyour.core.model.BlobRef
 import tv.cleanyour.core.model.Sha256
-import tv.cleanyour.core.registry.ApkInspector
+import tv.cleanyour.core.trust.ApkInspector
 import tv.cleanyour.core.store.BlobStore
 import java.io.File
 import java.io.FileInputStream
