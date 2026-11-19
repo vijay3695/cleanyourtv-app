@@ -506,7 +506,7 @@ fun TvSettingsScreen(state: TvSettingsState, onIntent: (TvSettingsIntent) -> Uni
             SecondaryButton(stringResource(R.string.private_dns_apply), { onIntent(TvSettingsIntent.AskApplyDns) },
                 Modifier.padding(top = 12.dp), enabled = !state.dnsBusy && !state.dnsLoading)
             if (state.canRestoreDns) {
-                SecondaryButton(stringResource(R.string.private_dns_restore), { onIntent(TvSettingsIntent.RestoreDns) },
+                SecondaryButton(stringResource(R.string.private_dns_restore), { onIntent(TvSettingsIntent.AskRestoreDns) },
                     Modifier.padding(top = 8.dp), enabled = !state.dnsBusy)
             }
         }
