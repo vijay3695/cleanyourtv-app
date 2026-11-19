@@ -260,4 +260,8 @@
     <string name="private_dns_confirm_title">தனிப்பட்ட DNS-ஐ மாற்றவா?</string>
     <string name="private_dns_confirm_note">தற்போதைய டிவி அமைப்பைச் சேமித்து, உங்கள் தேர்வைப் பயன்படுத்தி, மீண்டும் படித்து சரிபார்க்கும். உங்கள் தொலைபேசியின் DNS மாறாது.</string>
     <string name="private_dns_confirm_apply">இந்த டிவியில் பயன்படுத்து</string>
+    <string name="private_dns_review_restore">கடைசி மாற்றத்திற்கு முன் சேமித்த DNS முறையையும் ஹோஸ்ட்பெயரையும் மீட்டமைக்கவும்.</string>
+    <string name="private_dns_review_off">தேர்ந்தெடுத்த முறை: முடக்கு</string>
+    <string name="private_dns_review_auto">தேர்ந்தெடுத்த முறை: தானியங்கி</string>
+    <string name="private_dns_review_hostname">தேர்ந்தெடுத்த ஹோஸ்ட்பெயர்: {host}</string>
 </resources>
