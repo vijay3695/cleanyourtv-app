@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import tv.cleanyour.core.engine.Engine
 import tv.cleanyour.core.engine.RunState
 import tv.cleanyour.core.model.Level
+import tv.cleanyour.core.model.Op
 import tv.cleanyour.core.model.SettingKey
 import tv.cleanyour.core.model.TvId
 import tv.cleanyour.core.planner.PlanRequest
@@ -134,9 +135,15 @@ class TvSettingsMachine(
             if (oldMode !in setOf("off", "opportunistic", "hostname")) error("The current DNS mode is unknown; nothing was changed")
             if (oldMode == "hostname" && (oldHost.isNullOrBlank() || !SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(oldHost)))
                 error("The current DNS hostname is unknown; nothing was changed")
-            if (preserveBackup) d.documents.write(dnsBackupPath, (oldMode + "\n" + (oldHost?.let { "V" + it } ?: "N")).encodeToByteArray())
             val result = TvWriter(d).write(tvId, PlanRequest.SetPrivateDns(mode, host), fresh = true)
             if (result !is WriteResult.Done) error("The TV did not confirm the DNS change: $result")
+            if (preserveBackup) {
+                val planMode = result.plan.steps.firstOrNull { (it.op as? Op.SettingsPut)?.key == SettingKey.PRIVATE_DNS_MODE }?.prior?.settingValue
+                val planHost = result.plan.steps.firstOrNull { (it.op as? Op.SettingsPut)?.key == SettingKey.PRIVATE_DNS_SPECIFIER }?.prior?.settingValue
+                val savedMode = planMode ?: oldMode
+                val savedHost = planHost ?: oldHost
+                d.documents.write(dnsBackupPath, (savedMode + "\n" + (savedHost?.let { "V" + it } ?: "N")).encodeToByteArray())
+            }
             val verifySession = (d.access.session(tvId) as? AccessResult.Ok)?.session ?: error("DNS was changed, but the TV disconnected before verification. Reconnect and check its settings.")
             val after = d.runner.readSnapshot(verifySession)
             val expectedHost = host
@@ -147,7 +154,8 @@ class TvSettingsMachine(
             send(DnsChanged(state.value.copy(dnsBusy = false, dnsSupported = true, dnsMode = mode,
                 dnsHost = expectedHost.orEmpty(), dnsStatus = "Private DNS change verified on the TV", canRestoreDns = preserveBackup, dnsRestorePending = false)))
         } catch (e: Exception) {
-            send(DnsChanged(state.value.copy(dnsBusy = false, canRestoreDns = state.value.canRestoreDns || preserveBackup,
+            val recoverable = d.documents.read(dnsBackupPath) { true } ?: false
+            send(DnsChanged(state.value.copy(dnsBusy = false, canRestoreDns = state.value.canRestoreDns || recoverable,
                 dnsStatus = e.message ?: "Private DNS change failed")))
         }
     }
