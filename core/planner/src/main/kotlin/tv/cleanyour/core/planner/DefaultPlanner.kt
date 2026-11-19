@@ -997,9 +997,7 @@ class DefaultPlanner(
             if (mode !in setOf("off", "opportunistic", "hostname")) { refuse("unsupported Private DNS mode"); return }
             val host = request.hostname?.trim()?.trimEnd('.')?.lowercase()
             if (mode == "hostname") {
-                val labels = host?.split('.') ?: emptyList()
-                if (host.isNullOrBlank() || host.length > 253 || labels.size < 2 || labels.any { it.isEmpty() || it.length > 63 ||
-                    !it.first().isLetterOrDigit() || !it.last().isLetterOrDigit() || it.any { c -> !c.isLetterOrDigit() && c != '-' } } ||
+                if (host.isNullOrBlank() || !SettingKey.PRIVATE_DNS_SPECIFIER.valueShape.matches(host) ||
                     host.matches(Regex("[0-9.]+")) || host.contains(':')) {
                     refuse("enter a valid DNS hostname"); return
                 }
