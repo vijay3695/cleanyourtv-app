@@ -488,7 +488,7 @@ fun AppRoot(graph: AppGraph, start: Dest, onExit: () -> Unit, onLanguageSelected
                                             is OpenResult.Failed -> error("Could not reconnect to the selected TV: ${opened.error}")
                                         }
                                     }
-                                    val destination = RemotePath(RemoteDir.TMP, listOf("phone-${selected.info.sha256.hex.take(16)}.apk"))
+                                    val destination = RemotePath(RemoteDir.RESTORE, listOf("phone-${selected.info.sha256.hex.take(16)}.apk"))
                                     apkMessage = "Sending APK and verifying the TV copy…"
                                     val result = ApkTransferExecutor().transfer(target, session!!, selected, destination) { sent -> apkProgress = sent }
                                     apkRemotePath = destination.absolute
