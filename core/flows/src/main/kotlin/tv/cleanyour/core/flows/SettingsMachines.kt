@@ -139,9 +139,10 @@ class TvSettingsMachine(
             if (result !is WriteResult.Done) error("The TV did not confirm the DNS change: $result")
             if (preserveBackup) {
                 val planMode = result.plan.steps.firstOrNull { (it.op as? Op.SettingsPut)?.key == SettingKey.PRIVATE_DNS_MODE }?.prior?.settingValue
-                val planHost = result.plan.steps.firstOrNull { (it.op as? Op.SettingsPut)?.key == SettingKey.PRIVATE_DNS_SPECIFIER }?.prior?.settingValue
+                val hostStep = result.plan.steps.firstOrNull { (it.op as? Op.SettingsPut)?.key == SettingKey.PRIVATE_DNS_SPECIFIER }
+                val savedHost = if (hostStep != null) hostStep.prior?.settingValue else oldHost
                 val savedMode = planMode ?: oldMode
-                val savedHost = planHost ?: oldHost
+                
                 d.documents.write(dnsBackupPath, (savedMode + "\n" + (savedHost?.let { "V" + it } ?: "N")).encodeToByteArray())
             }
             val verifySession = (d.access.session(tvId) as? AccessResult.Ok)?.session ?: error("DNS was changed, but the TV disconnected before verification. Reconnect and check its settings.")
